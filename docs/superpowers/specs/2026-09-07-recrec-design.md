@@ -45,10 +45,11 @@ Inspired by QuickRecorder, Azayaka, BetterCapture, Kap/Aperture, CleanShot X and
 - Menu-bar item (`LSUIElement`), no Dock icon, no windows. Icon turns into a red dot with elapsed time while recording.
 - Start/stop from the menu or a global hotkey ⌃⌥⌘R (Carbon hotkey, no Accessibility permission).
 - Records one entire display: the display under the mouse by default, or a pinned display when more than one is connected.
-- Options (all in the menu, persisted): Microphone (off), System Audio (off), Show Cursor (on), Quality (Small / Balanced / High), Format (MP4-HEVC default, MP4-H.264, MOV-HEVC, MOV-H.264), Frame Rate (15/24/30/60), Resolution (Retina / Standard 1x), Display, Save folder (Desktop default), Reveal in Finder after recording (on), Launch at Login (off).
+- Options (all in the menu, persisted): Microphone (off), System Audio (off), Show Cursor (on), Quality (Small / Balanced / High), Format (MP4-HEVC default, MP4-H.264, MOV-HEVC, MOV-H.264), Frame Rate (15/24/30/60), Resolution (Retina / Standard 1x), Display, Save folder (`~/Movies/RecRec` default), Reveal in Finder after recording (on), Launch at Login (off).
 - Last recording entry in the menu: Open, Reveal in Finder, Export GIF.
 - Crash-safe files: fragmented MP4/MOV (a crash loses at most the last 5 s).
-- Excludes its own UI from the capture; prevents display sleep while recording; refuses to start with < 500 MB free.
+- Excludes its own UI from the capture; prevents display sleep while recording; stops and finalizes when the Mac goes to sleep; refuses to start with < 500 MB free.
+- Hardware H.264 cannot encode frames wider than 4096 px (AVAssetWriter silently falls back to software on 5K/6K displays), so H.264 recordings are downscaled to fit 4096×2304; HEVC has no such limit.
 - Permission flow: clear alerts with an "Open System Settings" button for Screen Recording and Microphone.
 
 **Later (cheap, not in v1)**: countdown, pause/resume, mixing mic + system audio into one track, click highlight (macOS 15 API), configurable hotkey, exclude specific apps, HDR.
@@ -100,9 +101,9 @@ RecRecTests (executable): custom harness exercising RecRecCore with synthetic fr
 
 **RecordingWriter (RecRecCore)** — owns `AVAssetWriter`, one video input (+ pixel buffer adaptor), optional audio inputs (microphone, system), a serial `DispatchQueue`, the heartbeat `DispatchSourceTimer`, and the `CMClock` used for "now".
 - `init(configuration:)` creates the file, sets `movieFragmentInterval = 5 s`, `shouldOptimizeForNetworkUse = false`, `expectsMediaDataInRealTime = true`.
-- `append(video pixelBuffer, at pts, status)` starts the session at the first complete frame's PTS; applies FrameGate; retains the last pixel buffer for heartbeats.
-- `append(audio sampleBuffer, track)` drops audio until the session started; converts timestamps if the caller passes a different clock.
-- `finish(at endTime) async throws -> RecordingResult {url, duration, fileSize, videoFrames}` appends the last frame at `endTime` (so an idle tail keeps the right duration), marks inputs finished, `endSession(atSourceTime:)`, `finishWriting`.
+- `appendVideo(pixelBuffer, presentationTime, status)` starts the session at the first complete frame's PTS; applies FrameGate; wraps the pixel buffer in a `CMSampleBuffer` with an explicit duration of one frame (`1/fps`) and appends it; retains the last pixel buffer for heartbeats.
+- `appendAudio(sampleBuffer, kind)` drops audio until the session started and buffers that end before the session start; drops buffers whose format description differs from the first accepted one (the AAC converter is configured from the first buffer, and some microphones change format after the first buffers).
+- `finish(at endTime) async throws -> RecordingResult {url, duration, fileSize, videoFrames}` re-appends the last frame at `max(endTime, last + 1/fps)` with an explicit one-frame duration, marks inputs finished, `endSession(atSourceTime: finalFrameEnd)`, `finishWriting`. The explicit duration matters: AVAssetWriter gives the last sample the previous inter-frame delta when its duration is invalid (a 2 s heartbeat gap would become a 2 s frozen tail), and `endSession` only extends the edit list, which ffmpeg-based players ignore. With a real final frame every player agrees on the duration.
 - Any writer failure is surfaced through `finish` (throws) and through an `onError` callback so the recorder can stop early; the fragmented file remains playable.
 
 **OutputNaming (RecRecCore)** — `Recording 2026-09-07 at 22.41.05.mp4` (24-hour, sortable); appends ` 2`, ` 3`… on collision.
@@ -150,7 +151,7 @@ RecRecTests (executable): custom harness exercising RecRecCore with synthetic fr
   AVVideoCompressionPropertiesKey: [
     kVTCompressionPropertyKey_Quality: q,               // tier × scale table below
     kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality: false,  // HEVC: smaller AND sharper; harmless for H.264
-    AVVideoMaxKeyFrameIntervalDurationKey: 10,          // seconds; keyframes only when frames are written
+    AVVideoMaxKeyFrameIntervalKey: fps * 10,            // counted in frames, not seconds: idle heartbeats (0.5 fps) then cost tiny P-frames, not a keyframe every 10 s
     AVVideoAllowFrameReorderingKey: false,              // B-frames never helped screen content: 4–9% larger at equal PSNR
     AVVideoExpectedSourceFrameRateKey: fps,
     kVTCompressionPropertyKey_RealTime: true,
@@ -175,7 +176,7 @@ No average-bitrate or data-rate-limit keys: the benchmark showed `DataRateLimits
 
 - `width/height`: display pixel size (Retina) or point size (1x), cropped to even numbers through `sourceRect`; `captureResolution = .best` (Retina) / `.nominal` (1x); `scalesToFit = false`.
 - `pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange` ('420v'): the encoder's native input, no conversion pass. `colorSpaceName = sRGB`, `colorMatrix = ITU_R_709_2` (matching the 709 tags written to the file so colors are not washed out).
-- `minimumFrameInterval = 1/fps`, `queueDepth = 5`, `showsCursor` per settings.
+- `minimumFrameInterval = 1/fps`, `queueDepth = 6` (one slot is permanently held by the retained last frame used for heartbeats), `showsCursor` per settings.
 - `capturesAudio` per settings, `sampleRate = 48000`, `channelCount = 2`, `excludesCurrentProcessAudio = true`.
 - Content filter excludes RecRec's own process (no timer in the recording).
 
@@ -187,7 +188,8 @@ No average-bitrate or data-rate-limit keys: the benchmark showed `DataRateLimits
 
 ### 6.4 Variable frame rate, heartbeat, fragments
 
-- Idle frames (`SCFrameStatus.idle`, or no image buffer) are skipped. A frame is re-appended when nothing was written for 2 s, so no frame duration exceeds ~2 s. Measured cost of a 1 s heartbeat on a 48%-idle minute: +5% (≈100 KB/min); 2 s halves that.
+- Idle frames (`SCFrameStatus.idle`, or no image buffer) are skipped. ScreenCaptureKit can also go completely silent on a static screen, so the heartbeat is timer-driven: a frame is re-appended when nothing was written for 2 s, so no frame duration exceeds ~2 s (players and editors then see a normal stream, and a seek never has to decode more than 10 s of tiny duplicate frames). Measured cost of a 1 s heartbeat on a 48%-idle minute: +5% (≈100 KB/min); 2 s halves that.
+- Keyframes are limited by frame count (`fps × 10` frames), not by duration, so idle periods do not pay for a full-frame keyframe every 10 s.
 - `movieFragmentInterval = 5 s` for both MP4 and MOV. Verified: a process killed mid-recording leaves a playable file missing at most the last fragment; without fragments the file is unreadable ("moov atom not found"). Overhead measured at < 1%.
 - `finish(at:)` always appends the last frame at the stop time so an idle tail is preserved.
 
@@ -202,7 +204,8 @@ From the benchmark scenario: ≈ 1.8 MB per minute of mixed desktop activity; a 
 | Screen Recording not granted | `SCShareableContent` fails → alert "RecRec needs Screen Recording permission" with "Open System Settings" (`x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`) and a note that macOS may require relaunching. State back to idle. |
 | Microphone denied while the option is on | Alert with "Open System Settings"; recording is not started (the user can turn the mic off). |
 | < 500 MB free on the target volume | Alert; not started. |
-| Stream stops on its own (display removed, sleep, user pressed Stop in the system indicator) | Finalize normally; the menu shows the result; if an error is attached, an alert explains it. |
+| Stream stops on its own (display removed, user pressed Stop in the system indicator) | Finalize normally; the menu shows the result; if an error other than "user stopped" is attached, an alert explains it. |
+| Mac goes to sleep (`NSWorkspace.willSleepNotification`) | Stop and finalize before sleep (ScreenCaptureKit streams do not survive sleep reliably). |
 | Writer fails mid-recording (disk full, encoder error) | Stop capture, finalize what exists, alert with the file location and the error. |
 | Quit while recording | Stop and finalize before terminating. |
 | GIF export failure | Alert; partial file removed. |
@@ -231,8 +234,10 @@ Binary < 2 MB; idle RSS < 30 MB; recording CPU < 15% of one core on Apple Silico
 2. HEVC-in-MP4 is the default format because the user's priority is size; H.264 is one click away for Windows/old-browser recipients.
 3. Retina (native) resolution is the default so text stays sharp; 1x is the size-saver option.
 4. "Export in various types" is satisfied by MP4/MOV × HEVC/H.264 at record time plus GIF export; WebM/MKV would require bundling ffmpeg (100+ MB) and were excluded.
-5. Save folder defaults to the Desktop like the built-in tool; file name `Recording YYYY-MM-DD at HH.mm.ss`.
+5. Save folder defaults to `~/Movies/RecRec` (writing to Desktop/Documents/Downloads triggers an extra macOS "access your Desktop folder" prompt on first recording; Movies does not); the menu offers Desktop/Downloads/Movies/Choose…; file name `Recording YYYY-MM-DD at HH.mm.ss`.
 6. Hotkey fixed at ⌃⌥⌘R (no conflicts with macOS shortcuts); not user-rebindable in v1.
 7. UI language English.
 8. macOS 14 minimum (SDK 14.2 is what the machine has); macOS 15-only features (mic through SCK, click highlight) are deferred.
 9. Two audio tracks when both mic and system audio are enabled (mixing deferred).
+10. Keyframe cadence 10 s of written frames (a 30 s cadence would save ~15% more but slows scrubbing); the research suggestion of 2 s was rejected because it doubles file size in the benchmark.
+11. H.264 above 4096 px wide is downscaled to fit rather than switched to HEVC, so the user's explicit compatibility choice is respected.
