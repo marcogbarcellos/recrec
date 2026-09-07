@@ -9,6 +9,7 @@ struct TestMain {
         registerEncoderConfigTests(runner)
         registerFrameGateTests(runner)
         registerOutputNamingTests(runner)
+        registerRecordingWriterTests(runner)
         let failures = await runner.run()
         exit(failures == 0 ? 0 : 1)
     }
