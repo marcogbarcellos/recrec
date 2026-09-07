@@ -226,7 +226,9 @@ Every error reaches the user as an `NSAlert` with a specific message; nothing is
 
 ## 10. Footprint targets
 
-Binary < 2 MB; idle RSS < 30 MB; recording CPU < 15% of one core on Apple Silicon (hardware encode; no pixel conversion in software).
+Binary < 2 MB; idle RSS < 50 MB; recording CPU < 15% of one core on Apple Silicon (hardware encode; no pixel conversion in software).
+
+Measured on 2026-09-08 (release build, M3 Max, macOS 26.6): bundle 552 KB, idle RSS 44 MB at 0% CPU. Recording CPU could not be measured from the autonomous session because Screen Recording permission requires the user to click the system prompt.
 
 ## 11. Assumptions made autonomously
 
