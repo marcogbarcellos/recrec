@@ -39,7 +39,7 @@ Turning on **Microphone** asks for the microphone permission. Saving to Desktop,
 | System Audio | off | Driver-free via ScreenCaptureKit, AAC 128 kbps stereo. RecRec's own sounds are excluded. |
 | Show Cursor | on | |
 | Quality | Balanced | Small / Balanced / High map to constant-quality encoder settings tuned per codec and resolution. |
-| Format | MP4 · HEVC | MP4 · H.264 is the "plays everywhere" choice (older Windows machines, some chat apps); MOV variants for Apple-only workflows. |
+| Format | MP4 · HEVC | HEVC plays natively on Apple devices, in Chrome 107+, Firefox 134+ (Windows) / 136+ (macOS) and Edge; on Windows it still needs the HEVC Video Extensions and a GPU with an HEVC decoder. Pick MP4 · H.264 when the recipient's setup is unknown; MOV variants are for Apple-only workflows. |
 | Frame Rate | 30 fps | 15 / 24 / 30 / 60. Frames are only written when the screen changes, so a static screen costs almost nothing at any setting. |
 | Resolution | Retina | Standard (1x) roughly halves the file at the cost of Retina-sharp text. |
 | Display | screen under the mouse | Shown only with more than one display; pin a specific one if you prefer. |

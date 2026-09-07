@@ -19,6 +19,7 @@ public struct GIFExportOptions {
 /// `maxWidth` pixels wide and loops forever. GIFs are large per second, so this is meant for short clips.
 public enum GIFExporter {
     /// Returns the number of frames written. The output file is removed on failure.
+    /// `progress` (0…1) is called from a background thread.
     @discardableResult
     public static func export(video: URL, to gifURL: URL, options: GIFExportOptions = GIFExportOptions(),
                               progress: ((Double) -> Void)? = nil) async throws -> Int {
@@ -40,11 +41,21 @@ public enum GIFExporter {
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { throw RecRecError.exportFailed("cannot decode \(video.lastPathComponent)") }
         reader.add(output)
-        guard reader.startReading() else {
-            throw RecRecError.exportFailed(reader.error?.localizedDescription ?? "cannot decode \(video.lastPathComponent)")
-        }
 
+        // Decoding and GIF encoding are synchronous and take seconds; keep them off the cooperative pool.
+        return try await Task.detached(priority: .userInitiated) {
+            try encode(reader: reader, output: output, to: gifURL, targetSize: targetSize,
+                       frameDuration: frameDuration, frameCount: frameCount, progress: progress)
+        }.value
+    }
+
+    private static func encode(reader: AVAssetReader, output: AVAssetReaderTrackOutput, to gifURL: URL, targetSize: CGSize,
+                               frameDuration: Double, frameCount: Int, progress: ((Double) -> Void)?) throws -> Int {
+        guard reader.startReading() else {
+            throw RecRecError.exportFailed(reader.error?.localizedDescription ?? "cannot decode the recording")
+        }
         guard let destination = CGImageDestinationCreateWithURL(gifURL as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
+            reader.cancelReading()
             throw RecRecError.exportFailed("could not create \(gifURL.lastPathComponent)")
         }
         CGImageDestinationSetProperties(destination, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
@@ -85,6 +96,7 @@ public enum GIFExporter {
                 throw RecRecError.exportFailed("could not finalize \(gifURL.lastPathComponent)")
             }
         } catch {
+            reader.cancelReading()
             try? FileManager.default.removeItem(at: gifURL)
             throw (error as? RecRecError) ?? RecRecError.exportFailed(error.localizedDescription)
         }

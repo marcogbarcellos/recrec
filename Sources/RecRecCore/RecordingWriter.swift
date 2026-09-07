@@ -209,6 +209,18 @@ public final class RecordingWriter {
         }
     }
 
+    /// Abandons the recording and deletes the file; used when starting fails after the file was created.
+    public func cancel() {
+        queue.async { [self] in
+            timer?.cancel()
+            timer = nil
+            guard !finished else { return }
+            finished = true
+            if writer.status == .writing { writer.cancelWriting() }
+            try? FileManager.default.removeItem(at: configuration.outputURL)
+        }
+    }
+
     /// Test hook: stops the heartbeat and leaves the file unfinished, simulating a crash.
     public func abandonForTesting() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in

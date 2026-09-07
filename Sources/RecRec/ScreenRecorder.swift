@@ -58,6 +58,7 @@ final class ScreenRecorder: Recorder {
     func start(settings: RecordingSettings) async throws {
         guard state == .idle else { return }
         state = .preparing
+        var pendingWriter: RecordingWriter?
         do {
             try DiskSpace.ensureFreeSpace(at: settings.saveDirectory)
             if !CGPreflightScreenCaptureAccess() {
@@ -106,6 +107,7 @@ final class ScreenRecorder: Recorder {
                 audioTracks: audioTracks,
                 clock: clock,
                 frameRate: settings.frameRate))
+            pendingWriter = writer
             writer.onError = { error in
                 Task { @MainActor [weak self] in await self?.writerDidFail(error) }
             }
@@ -134,6 +136,7 @@ final class ScreenRecorder: Recorder {
             log.info("recording started: \(url.lastPathComponent, privacy: .public) \(geometry.width)x\(geometry.height) \(settings.codec.rawValue, privacy: .public) \(settings.quality.rawValue, privacy: .public) \(settings.frameRate) fps")
         } catch {
             relay.detach()
+            pendingWriter?.cancel()   // no half-written file for a recording that never started
             state = .idle
             throw error
         }

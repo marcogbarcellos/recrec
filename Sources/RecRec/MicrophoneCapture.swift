@@ -18,7 +18,10 @@ final class MicrophoneCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     private let session = AVCaptureSession()
+    /// Delivers sample buffers; must never block on the session queue.
     private let queue = DispatchQueue(label: "com.barsmike.RecRec.microphone", qos: .userInitiated)
+    /// startRunning/stopRunning block, so they run here rather than on the main actor or the delegate queue.
+    private let sessionQueue = DispatchQueue(label: "com.barsmike.RecRec.microphone.session", qos: .userInitiated)
     private let streamClock: CMClock
     private let log = Logger(subsystem: "com.barsmike.RecRec", category: "microphone")
 
@@ -41,14 +44,14 @@ final class MicrophoneCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDel
     }
 
     func start() {
-        queue.async { self.session.startRunning() }
+        let session = self.session
+        sessionQueue.async { session.startRunning() }
     }
 
     func stop() {
-        queue.sync {
-            self.onSampleBuffer = nil
-            self.session.stopRunning()
-        }
+        queue.sync { self.onSampleBuffer = nil }
+        let session = self.session
+        sessionQueue.async { session.stopRunning() }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {

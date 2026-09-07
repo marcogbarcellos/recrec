@@ -23,6 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         case .preparing, .recording, .stopping:
             Task { @MainActor in
+                // Let an in-flight start or stop settle (bounded), then stop and finalize.
+                var waited = 0
+                while recorder.state == .preparing || recorder.state == .stopping, waited < 100 {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    waited += 1
+                }
                 await recorder.stop()
                 sender.reply(toApplicationShouldTerminate: true)
             }

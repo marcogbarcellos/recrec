@@ -125,6 +125,15 @@ func registerRecordingWriterTests(_ r: TestRunner) {
         try expect(result.fileSize > 0)
     }
 
+    r.test("cancel removes the file and later finish fails") {
+        let url = SyntheticMedia.tempURL("mp4")
+        let w = try RecordingWriter(configuration: config(url))
+        feed(w, frames: 0..<10)
+        w.cancel()
+        try await expectThrows { _ = try await w.finish(at: t(1)) }
+        try expectEqual(FileManager.default.fileExists(atPath: url.path), false)
+    }
+
     r.test("finishing with no frames throws noVideoFrames and removes the file") {
         let url = SyntheticMedia.tempURL("mp4")
         let w = try RecordingWriter(configuration: config(url))
