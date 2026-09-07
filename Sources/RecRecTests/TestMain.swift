@@ -10,6 +10,7 @@ struct TestMain {
         registerFrameGateTests(runner)
         registerOutputNamingTests(runner)
         registerRecordingWriterTests(runner)
+        registerGIFExporterTests(runner)
         let failures = await runner.run()
         exit(failures == 0 ? 0 : 1)
     }

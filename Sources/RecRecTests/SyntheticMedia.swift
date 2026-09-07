@@ -13,11 +13,16 @@ enum SyntheticMedia {
         CVPixelBufferLockBaseAddress(buffer, [])
         let luma = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!.assumingMemoryBound(to: UInt8.self)
         let lumaStride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
-        for row in 0..<height {
-            for col in 0..<width {
-                let stripe = ((col / 64) + frame) % 2 == 0
-                luma[row * lumaStride + col] = stripe ? 200 : 40
-            }
+        // Vertical stripes 64 px wide that shift with `frame`; built once per row then copied (fast in debug builds).
+        var col = 0
+        while col < width {
+            let stripe = ((col / 64) + frame) % 2 == 0
+            let run = min(64, width - col)
+            memset(luma + col, stripe ? 200 : 40, run)
+            col += run
+        }
+        for row in 1..<height {
+            memcpy(luma + row * lumaStride, luma, width)
         }
         let chroma = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!
         memset(chroma, 128, CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) * (height / 2))

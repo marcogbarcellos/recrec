@@ -140,7 +140,7 @@ public final class RecordingWriter {
                 audioFormats[kind] = format
             }
             guard writer.status == .writing else { reportFailure(); return }
-            guard input.isReadyForMoreMediaData else { return }
+            guard waitUntilReady(input) else { return }
             if !input.append(sampleBuffer) { reportFailure() }
         }
     }
@@ -178,7 +178,7 @@ public final class RecordingWriter {
                 if writer.status == .writing, let last = lastPixelBuffer {
                     var spins = 0
                     while !videoInput.isReadyForMoreMediaData && writer.status == .writing && spins < 200 {
-                        usleep(5_000)
+                        usleep(5_000)   // up to 1 s: the final frame matters more than latency
                         spins += 1
                     }
                     gate.noteAppended(at: finalTime)
@@ -229,9 +229,21 @@ public final class RecordingWriter {
         append(last, at: now)
     }
 
+    /// Waits briefly (two frame durations) for the encoder to accept more data. Real-time inputs keep only a
+    /// tiny queue, so a momentary stall would otherwise drop frames; anything longer is dropped on purpose.
+    private func waitUntilReady(_ input: AVAssetWriterInput) -> Bool {
+        let budget = max(0.01, CMTimeGetSeconds(configuration.frameDuration) * 2)
+        let deadline = Date().addingTimeInterval(budget)
+        while !input.isReadyForMoreMediaData {
+            if writer.status != .writing || Date() >= deadline { return input.isReadyForMoreMediaData }
+            usleep(500)
+        }
+        return true
+    }
+
     private func append(_ pixelBuffer: CVPixelBuffer, at time: CMTime) {
         guard writer.status == .writing else { reportFailure(); return }
-        guard videoInput.isReadyForMoreMediaData else { droppedFrames += 1; return }
+        guard waitUntilReady(videoInput) else { droppedFrames += 1; return }
         guard let sampleBuffer = makeSampleBuffer(pixelBuffer, at: time) else { droppedFrames += 1; return }
         if videoInput.append(sampleBuffer) {
             lastPixelBuffer = pixelBuffer
