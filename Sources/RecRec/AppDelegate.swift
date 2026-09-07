@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKey { [weak self] in
             self?.menu.toggleRecording()
         }
+        menu.hotKeyAvailable = hotKey?.isRegistered ?? false
     }
 
     /// Never leave a recording unfinished: stop and finalize before quitting.

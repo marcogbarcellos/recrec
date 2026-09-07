@@ -13,6 +13,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var lastResult: RecordingResult?
     private var exportInProgress = false
     private var displays: [(id: UInt32, name: String)] = []
+    /// Set by AppDelegate after registering the global shortcut; false when another app owns ⌃⌥⌘R.
+    var hotKeyAvailable = true {
+        didSet { rebuildMenu() }
+    }
 
     init(store: SettingsStore, recorder: Recorder) {
         self.store = store
@@ -32,6 +36,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     // MARK: - Recording
 
+    /// Called from the menu item and from the global hotkey. Both may fire for one keypress while the menu is
+    /// open; that is harmless because ScreenRecorder flips its state synchronously before its first await,
+    /// so the second call sees .preparing/.stopping and does nothing.
     func toggleRecording() {
         switch recorder.state {
         case .idle:
@@ -246,8 +253,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case .preparing: toggle = item("Starting…", nil)
         case .stopping: toggle = item("Saving…", nil)
         }
-        toggle.keyEquivalentModifierMask = [.control, .option, .command]
+        if hotKeyAvailable {
+            toggle.keyEquivalentModifierMask = [.control, .option, .command]
+        } else {
+            toggle.keyEquivalent = ""
+        }
         menu.addItem(toggle)
+        if !hotKeyAvailable {
+            menu.addItem(item("\(HotKey.displayString) is taken by another app", nil))
+        }
         menu.addItem(.separator())
 
         menu.addItem(check("Microphone", settings.microphoneEnabled, #selector(toggleMicrophone(_:)), enabled: !busy))
