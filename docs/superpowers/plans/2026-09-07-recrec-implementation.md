@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-07-recrec-design.md`
 
+**Status (2026-09-08):** executed inline, all 13 tasks done, 28 tests passing (`make test`), bundle built with `make app` (557 KB, idle RSS ≈ 44 MB). Deviations from the text below, all reflected in the code and spec: every appended frame carries an explicit one-frame duration and `finish(at:)` re-appends the last frame (AVAssetWriter trap found by research); keyframes use `AVVideoMaxKeyFrameIntervalKey` (frame count) instead of the duration key; default folder is `~/Movies/RecRec`; H.264 capped to 4096×2304; recording stops on system sleep; `RecordingWriter.cancel()` cleans up after a failed start; GIF export decodes sequentially with `AVAssetReader` instead of `AVAssetImageGenerator` (which was ~30× slower with long GOPs); the writer waits up to two frame durations for encoder readiness before dropping a frame. Live capture (Screen Recording permission) still needs the manual acceptance checklist in README.md.
+
 ## Global Constraints
 
 - Toolchain: Command Line Tools 15.1, Swift 5.9.2, macOS SDK 14.2. No Xcode, no XCTest. Deployment target `macOS 14.0`.
