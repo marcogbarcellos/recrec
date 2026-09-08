@@ -43,6 +43,7 @@ make test       # runs the test suite (custom harness; no Xcode needed)
 make bench      # re-runs the encoder benchmark (see docs/benchmarks/encoder-benchmark.md)
 make icon       # regenerates the app icon and README logo from tools/icon/make-icon.swift
 make release    # zips the built app into dist/RecRec-<version>.zip
+make install    # builds, copies the app to /Applications and relaunches it from there
 ```
 
 Options: `make signing-cert` creates a self-signed "RecRec Development" certificate once so rebuilds keep their Screen Recording permission (see Troubleshooting); `make app SIGN="Apple Development: Your Name (TEAMID)"` uses a real identity instead; `make app UNIVERSAL=1` builds an arm64 + x86_64 binary. Copy `dist/RecRec.app` to `/Applications` if you want Launch at Login to survive rebuilds.

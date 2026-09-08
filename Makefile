@@ -14,7 +14,7 @@ else
   BUILD    := .build/release
 endif
 
-.PHONY: build test app run bench clean signing-cert icon release
+.PHONY: build test app run bench clean signing-cert icon release install
 
 build:
 	swift build -c release $(ARCHS)
@@ -49,6 +49,14 @@ icon:
 	iconutil -c icns .build/icon/AppIcon.iconset -o Packaging/AppIcon.icns
 	cp .build/icon/logo-512.png docs/assets/logo-512.png
 	cp .build/icon/logo-128.png docs/assets/logo-128.png
+
+# Build, copy to /Applications (replacing any previous copy) and relaunch from there.
+install: app
+	-osascript -e 'tell application "$(APP)" to quit' >/dev/null 2>&1; sleep 1
+	rm -rf "/Applications/$(APP).app"
+	ditto "$(DIST)" "/Applications/$(APP).app"
+	open "/Applications/$(APP).app"
+	@echo "Installed /Applications/$(APP).app"
 
 # Zip the built app for a GitHub release: dist/RecRec-$(VERSION).zip
 release: app
