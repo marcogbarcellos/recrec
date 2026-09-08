@@ -2,6 +2,8 @@
 
 A tiny menu-bar screen recorder for macOS that writes **small** MP4 files.
 
+> **Em português:** RecRec é um gravador de tela para macOS que vive só na barra de menus (sem Dock, sem janelas) e gera arquivos MP4 **pequenos**: cerca de 2 MB por minuto de uso normal em tela Retina, contra 75–150 MB do QuickTime. Requer macOS 14+ e as Command Line Tools (`xcode-select --install`). Para rodar: `make run` (compila e abre o app). No primeiro uso, clique no ícone ● → **Start Recording**, autorize *Screen Recording* em Ajustes → Privacidade e Segurança, **feche e reabra o app** e grave. O atalho global é ⌃⌥⌘R; as gravações vão para `~/Movies/RecRec`. Todas as opções (microfone, áudio do sistema, qualidade, formato HEVC/H.264, fps, resolução, pasta) ficam no menu. As seções abaixo detalham build, permissões, tamanhos esperados e solução de problemas.
+
 - Records the entire screen with ScreenCaptureKit and Apple's hardware HEVC/H.264 encoders. No windows, no Dock icon, no dependencies: the app bundle is about 550 KB and idles at ~44 MB of RAM.
 - Files are 10–20× smaller than QuickTime's for the same content: constant-quality encoding, frames written only when the screen changes, HEVC by default, 30 fps. A minute of typical desktop work is around 2 MB at full Retina resolution (about 1 MB at 1x); QuickTime writes 75–150 MB for the same minute.
 - Crash-safe: recordings are fragmented MP4/MOV, so a crash or forced quit loses at most the last 5 seconds.
