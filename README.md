@@ -78,7 +78,7 @@ A completely static screen costs about 0.1 MB per minute; full-screen video play
 - **"Screen Recording permission needed" keeps coming back after rebuilding.** Ad-hoc signed builds have no stable identity, so macOS treats each rebuild as a new app. Either sign with a real identity (`make app SIGN="Apple Development: …"`, or a self-signed code-signing certificate created in Keychain Access) or reset the entry with `tccutil reset ScreenCapture com.barsmike.RecRec` and grant it again.
 - **The recording stopped by itself.** Display disconnected, the Mac went to sleep, or Stop was pressed in the system indicator. The file up to that moment is finalized and listed under **Last:**.
 - **H.264 on a 5K/6K display looks downscaled.** Apple's hardware H.264 encoder stops at 4096 px wide, so RecRec fits H.264 recordings inside 4096×2304. Use HEVC for full resolution.
-- **Logs**: `log stream --predicate 'subsystem == "com.barsmike.RecRec"' --style compact`.
+- **Logs**: RecRec writes a diagnostics log to `~/Library/Logs/RecRec/RecRec.log` (one line per recording start/stop, microphone and encoder events, dropped-buffer counters). Attach it when reporting a problem. The same lines also go to the unified log (`log stream --predicate 'subsystem == "com.barsmike.RecRec"'`).
 
 ## Manual acceptance checklist
 
