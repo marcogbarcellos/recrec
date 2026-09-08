@@ -1,7 +1,10 @@
 APP        := RecRec
 BUNDLE_ID  := com.barsmike.RecRec
 VERSION    ?= 0.1.0
-SIGN       ?= -
+# Signing identity: a stable identity keeps the Screen Recording permission across rebuilds (ad-hoc "-"
+# signatures change with every build and macOS treats each build as a new app). Auto-detects the
+# "RecRec Development" certificate created by `make signing-cert`; override with SIGN="Apple Development: …".
+SIGN       ?= $(shell security find-identity -v -p codesigning 2>/dev/null | grep -q '"RecRec Development"' && echo "RecRec Development" || echo "-")
 DIST       := dist/$(APP).app
 ifeq ($(UNIVERSAL),1)
   ARCHS    := --arch arm64 --arch x86_64
@@ -11,7 +14,7 @@ else
   BUILD    := .build/release
 endif
 
-.PHONY: build test app run bench clean
+.PHONY: build test app run bench clean signing-cert
 
 build:
 	swift build -c release $(ARCHS)
@@ -38,3 +41,15 @@ bench:
 
 clean:
 	rm -rf .build dist
+
+# One-time: create a self-signed "RecRec Development" code-signing certificate in the login keychain so
+# that rebuilds keep their Screen Recording permission. macOS may ask for your password to trust it.
+signing-cert:
+	@security find-identity -v -p codesigning | grep -q '"RecRec Development"' && echo "RecRec Development certificate already exists" && exit 0; \
+	set -e; WORK=$$(mktemp -d); cd "$$WORK"; \
+	printf '[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n[dn]\nCN=RecRec Development\n[v3]\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\nsubjectKeyIdentifier=hash\n' > ext.cnf; \
+	openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config ext.cnf -keyout key.pem -out cert.pem 2>/dev/null; \
+	openssl pkcs12 -export -legacy -out dev.p12 -inkey key.pem -in cert.pem -name "RecRec Development" -passout pass:recrec 2>/dev/null || openssl pkcs12 -export -out dev.p12 -inkey key.pem -in cert.pem -name "RecRec Development" -passout pass:recrec; \
+	security import dev.p12 -k ~/Library/Keychains/login.keychain-db -P recrec -T /usr/bin/codesign -T /usr/bin/security; \
+	security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db cert.pem; \
+	rm -rf "$$WORK"; security find-identity -v -p codesigning | grep "RecRec Development"
