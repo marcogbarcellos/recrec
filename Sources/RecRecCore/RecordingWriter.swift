@@ -46,12 +46,35 @@ public struct WriterConfiguration {
     var frameDuration: CMTime { CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate))) }
 }
 
+public struct AudioTrackStats: Equatable {
+    public var accepted = 0
+    public var droppedBeforeSession = 0
+    public var droppedFormatChanged = 0
+    public var droppedNotReady = 0
+    public var appendFailed = 0
+    public var firstPresentationTime: Double?
+    public var lastPresentationTime: Double?
+
+    public var summary: String {
+        var parts = ["accepted \(accepted)"]
+        if droppedBeforeSession > 0 { parts.append("before-session \(droppedBeforeSession)") }
+        if droppedFormatChanged > 0 { parts.append("format-changed \(droppedFormatChanged)") }
+        if droppedNotReady > 0 { parts.append("not-ready \(droppedNotReady)") }
+        if appendFailed > 0 { parts.append("append-failed \(appendFailed)") }
+        if let first = firstPresentationTime, let last = lastPresentationTime {
+            parts.append(String(format: "span %.3f→%.3f s", first, last))
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
 public struct RecordingResult: Equatable {
     public var url: URL
     /// Media duration in seconds (what every player reports).
     public var duration: Double
     public var fileSize: Int64
     public var videoFrames: Int
+    public var audioStats: [AudioTrackKind: AudioTrackStats] = [:]
 }
 
 /// Wraps AVAssetWriter for a live capture: video frames with explicit one-frame durations, idle-frame
@@ -67,6 +90,7 @@ public final class RecordingWriter {
     private let videoInput: AVAssetWriterInput
     private var audioInputs: [AudioTrackKind: AVAssetWriterInput] = [:]
     private var audioFormats: [AudioTrackKind: CMFormatDescription] = [:]
+    private var audioStats: [AudioTrackKind: AudioTrackStats] = [:]
     private var gate: FrameGate
     private var sessionStart: CMTime = .invalid
     private var lastPixelBuffer: CVPixelBuffer?
@@ -77,6 +101,7 @@ public final class RecordingWriter {
     private var finished = false
     private var timer: DispatchSourceTimer?
     private let log = Logger(subsystem: "com.barsmike.RecRec", category: "writer")
+    private let diagnostics = DiagnosticLog.shared
 
     public init(configuration: WriterConfiguration) throws {
         self.configuration = configuration
@@ -125,23 +150,41 @@ public final class RecordingWriter {
 
     public func appendAudio(_ sampleBuffer: CMSampleBuffer, kind: AudioTrackKind) {
         queue.async { [self] in
-            guard !finished, sessionStart.isValid, let input = audioInputs[kind] else { return }
+            guard !finished, let input = audioInputs[kind] else { return }
+            var stats = audioStats[kind] ?? AudioTrackStats()
+            defer { audioStats[kind] = stats }
             let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             let end = CMTimeAdd(pts, CMSampleBufferGetDuration(sampleBuffer))
-            guard CMTimeCompare(end, sessionStart) > 0 else { return }
+            guard sessionStart.isValid, CMTimeCompare(end, sessionStart) > 0 else { stats.droppedBeforeSession += 1; return }
             guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
             if let locked = audioFormats[kind] {
                 // The AAC converter is configured from the first buffer; a different format would corrupt the track.
                 guard CMFormatDescriptionEqual(locked, otherFormatDescription: format) else {
-                    log.warning("dropping \(kind.rawValue, privacy: .public) audio buffer with a changed format")
+                    if stats.droppedFormatChanged == 0 {
+                        diagnostics.log("writer", "\(kind.rawValue) audio format changed after \(stats.accepted) buffers; dropping the rest")
+                    }
+                    stats.droppedFormatChanged += 1
                     return
                 }
             } else {
                 audioFormats[kind] = format
+                if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {
+                    diagnostics.log("writer", String(format: "%@ audio starts at %.3f s (session %.3f): rate=%d ch=%d bits=%d", kind.rawValue, pts.seconds, sessionStart.seconds, Int(asbd.mSampleRate), asbd.mChannelsPerFrame, asbd.mBitsPerChannel))
+                }
             }
             guard writer.status == .writing else { reportFailure(); return }
-            guard waitUntilReady(input) else { return }
-            if !input.append(sampleBuffer) { reportFailure() }
+            guard waitUntilReady(input) else { stats.droppedNotReady += 1; return }
+            if input.append(sampleBuffer) {
+                stats.accepted += 1
+                if stats.firstPresentationTime == nil { stats.firstPresentationTime = pts.seconds }
+                stats.lastPresentationTime = end.seconds
+            } else {
+                stats.appendFailed += 1
+                if stats.appendFailed == 1 {
+                    diagnostics.log("writer", "\(kind.rawValue) audio append failed: \(writer.error?.localizedDescription ?? "no error"), status \(writer.status.rawValue)")
+                }
+                reportFailure()
+            }
         }
     }
 
@@ -195,12 +238,14 @@ public final class RecordingWriter {
                 let duration = CMTimeGetSeconds(CMTimeSubtract(sessionEnd, sessionStart))
                 let frames = videoFrames
                 let dropped = droppedFrames
+                let stats = audioStats
                 writer.finishWriting { [self] in
                     if writer.status == .completed {
                         let attributes = try? FileManager.default.attributesOfItem(atPath: configuration.outputURL.path)
                         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-                        log.info("finished \(self.configuration.outputURL.lastPathComponent, privacy: .public): \(frames) frames, \(dropped) dropped, \(size) bytes")
-                        continuation.resume(returning: RecordingResult(url: configuration.outputURL, duration: duration, fileSize: size, videoFrames: frames))
+                        let audioSummary = stats.map { "\($0.key.rawValue): \($0.value.summary)" }.sorted().joined(separator: "; ")
+                        diagnostics.log("writer", String(format: "finished %@: %.2f s, %d video frames (%d dropped), %lld bytes%@", configuration.outputURL.lastPathComponent, duration, frames, dropped, size, audioSummary.isEmpty ? "" : " | audio " + audioSummary))
+                        continuation.resume(returning: RecordingResult(url: configuration.outputURL, duration: duration, fileSize: size, videoFrames: frames, audioStats: stats))
                     } else {
                         continuation.resume(throwing: RecRecError.writerFailed(writer.error?.localizedDescription ?? "unknown"))
                     }
@@ -255,7 +300,11 @@ public final class RecordingWriter {
 
     private func append(_ pixelBuffer: CVPixelBuffer, at time: CMTime) {
         guard writer.status == .writing else { reportFailure(); return }
-        guard waitUntilReady(videoInput) else { droppedFrames += 1; return }
+        guard waitUntilReady(videoInput) else {
+            droppedFrames += 1
+            if droppedFrames == 1 { diagnostics.log("writer", "video input not ready; dropping a frame at \(time.seconds)") }
+            return
+        }
         guard let sampleBuffer = makeSampleBuffer(pixelBuffer, at: time) else { droppedFrames += 1; return }
         if videoInput.append(sampleBuffer) {
             lastPixelBuffer = pixelBuffer

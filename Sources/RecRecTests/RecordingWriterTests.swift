@@ -125,6 +125,24 @@ func registerRecordingWriterTests(_ r: TestRunner) {
         try expect(result.fileSize > 0)
     }
 
+    r.test("audio keeps flowing when the format description changes but the PCM format does not") {
+        // Reproduces the field bug: the microphone track stopped after the first 3 buffers because the capture
+        // pipeline started delivering a different CMFormatDescription (same sample rate/channels/bit depth).
+        let url = SyntheticMedia.tempURL("mp4")
+        defer { SyntheticMedia.cleanup(url) }
+        let w = try RecordingWriter(configuration: config(url, audio: [.microphone]))
+        for i in 0..<60 {
+            w.appendVideo(SyntheticMedia.pixelBuffer(width: 640, height: 360, frame: i), presentationTime: t(Double(i) / 30), status: .complete)
+            if i % 3 == 0 {
+                let settled = i >= 9   // first three buffers: one description; afterwards another
+                w.appendAudio(SyntheticMedia.audioSampleBuffer(startTime: t(Double(i) / 30), frames: 4800, withChannelLayout: settled), kind: .microphone)
+            }
+        }
+        _ = try await w.finish(at: t(2))
+        let audioDuration = try await SyntheticMedia.audioDuration(url)
+        try expectNear(audioDuration, 2.0, tolerance: 0.15, "audio track should cover the whole recording")
+    }
+
     r.test("cancel removes the file and later finish fails") {
         let url = SyntheticMedia.tempURL("mp4")
         let w = try RecordingWriter(configuration: config(url))

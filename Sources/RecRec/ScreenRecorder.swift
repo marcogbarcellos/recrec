@@ -35,6 +35,7 @@ final class ScreenRecorder: Recorder {
     private let relay = StreamOutputRelay()
     private let captureQueue = DispatchQueue(label: "com.barsmike.RecRec.capture", qos: .userInitiated)
     private let log = Logger(subsystem: "com.barsmike.RecRec", category: "recorder")
+    private let diagnostics = DiagnosticLog.shared
     private var stream: SCStream?
     private var writer: RecordingWriter?
     private var microphone: MicrophoneCapture?
@@ -89,6 +90,7 @@ final class ScreenRecorder: Recorder {
             let configuration = Self.streamConfiguration(settings: settings, geometry: geometry)
             let stream = SCStream(filter: filter, configuration: configuration, delegate: relay)
             let clock = stream.synchronizationClock ?? CMClockGetHostTimeClock()
+            diagnostics.log("recorder", "stream clock \(stream.synchronizationClock == nil ? "nil → host clock" : (stream.synchronizationClock === CMClockGetHostTimeClock() ? "is the host clock" : "is a separate clock")); host now \(String(format: "%.3f", CMClockGetTime(CMClockGetHostTimeClock()).seconds)), stream now \(String(format: "%.3f", CMClockGetTime(clock).seconds))")
 
             var audioTracks: [AudioTrackSpec] = []
             if settings.systemAudioEnabled {
@@ -133,10 +135,11 @@ final class ScreenRecorder: Recorder {
             self.stopError = nil
             activity = ProcessInfo.processInfo.beginActivity(options: [.idleDisplaySleepDisabled, .userInitiated], reason: "Screen recording")
             state = .recording(since: Date())
-            log.info("recording started: \(url.lastPathComponent, privacy: .public) \(geometry.width)x\(geometry.height) \(settings.codec.rawValue, privacy: .public) \(settings.quality.rawValue, privacy: .public) \(settings.frameRate) fps")
+            diagnostics.log("recorder", "started \(url.lastPathComponent): \(geometry.width)x\(geometry.height) \(settings.codec.rawValue) \(settings.quality.rawValue) \(settings.frameRate) fps mic=\(settings.microphoneEnabled) systemAudio=\(settings.systemAudioEnabled) display=\(display.displayID)")
         } catch {
             relay.detach()
             pendingWriter?.cancel()   // no half-written file for a recording that never started
+            diagnostics.log("recorder", "start failed: \(error.localizedDescription)")
             state = .idle
             throw error
         }
@@ -157,6 +160,7 @@ final class ScreenRecorder: Recorder {
         do {
             outcome = .success(try await writer.finish(at: endTime))
         } catch {
+            diagnostics.log("recorder", "finish failed: \(error.localizedDescription)")
             outcome = .failure(error)
         }
         if case .success = outcome, let stopError {
@@ -182,9 +186,9 @@ final class ScreenRecorder: Recorder {
             // -3817 = SCStreamErrorUserStopped (the user pressed Stop in the system's recording indicator);
             // the constant is not in the macOS 14.2 SDK headers.
             if nsError.domain == SCStreamErrorDomain && nsError.code == -3817 {
-                log.info("stream stopped by the user from the system indicator")
+                diagnostics.log("recorder", "stream stopped by the user from the system indicator")
             } else {
-                log.error("stream stopped: \(error.localizedDescription, privacy: .public)")
+                diagnostics.log("recorder", "stream stopped with error: \(error.localizedDescription)")
                 stopError = RecorderError.streamStopped(error.localizedDescription)
             }
         }

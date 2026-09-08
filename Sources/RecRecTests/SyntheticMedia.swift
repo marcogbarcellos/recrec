@@ -30,15 +30,25 @@ enum SyntheticMedia {
         return buffer
     }
 
-    /// Mono Float32 PCM sample buffer carrying a 440 Hz tone.
-    static func audioSampleBuffer(startTime: CMTime, frames: Int, sampleRate: Double = 48_000) -> CMSampleBuffer {
+    /// Mono Float32 PCM sample buffer carrying a 440 Hz tone. `withChannelLayout` attaches an explicit mono
+    /// channel layout, which makes the format description differ from one without it while the ASBD is identical
+    /// (what capture pipelines do when they "settle" after the first buffers).
+    static func audioSampleBuffer(startTime: CMTime, frames: Int, sampleRate: Double = 48_000,
+                                  withChannelLayout: Bool = false) -> CMSampleBuffer {
         var asbd = AudioStreamBasicDescription(
             mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
             mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 1, mBitsPerChannel: 32, mReserved: 0)
         var format: CMAudioFormatDescription?
-        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0,
-                                       magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        if withChannelLayout {
+            var layout = AudioChannelLayout()
+            layout.mChannelLayoutTag = kAudioChannelLayoutTag_Mono
+            CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: MemoryLayout<AudioChannelLayout>.size, layout: &layout,
+                                           magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        } else {
+            CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0,
+                                           magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+        }
         let byteCount = frames * 4
         var block: CMBlockBuffer?
         CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: byteCount, blockAllocator: nil,
@@ -105,6 +115,13 @@ enum SyntheticMedia {
         }
         return AssetInfo(duration: CMTimeGetSeconds(duration), videoFrames: frames, hasAudio: !audio.isEmpty,
                          codec: codec, width: Int(size.width), height: Int(size.height))
+    }
+
+    /// Duration of the first audio track in seconds (0 when there is none).
+    static func audioDuration(_ url: URL) async throws -> Double {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return 0 }
+        return try await track.load(.timeRange).duration.seconds
     }
 
     static func countAtoms(_ url: URL, _ atom: String) throws -> Int {
