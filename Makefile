@@ -14,7 +14,7 @@ else
   BUILD    := .build/release
 endif
 
-.PHONY: build test app run bench clean signing-cert
+.PHONY: build test app run bench clean signing-cert icon release
 
 build:
 	swift build -c release $(ARCHS)
@@ -26,6 +26,7 @@ app: build
 	rm -rf "$(DIST)"
 	mkdir -p "$(DIST)/Contents/MacOS" "$(DIST)/Contents/Resources"
 	cp "$(BUILD)/$(APP)" "$(DIST)/Contents/MacOS/$(APP)"
+	cp Packaging/AppIcon.icns "$(DIST)/Contents/Resources/AppIcon.icns"
 	sed -e 's/__VERSION__/$(VERSION)/g' Packaging/Info.plist > "$(DIST)/Contents/Info.plist"
 	printf 'APPL????' > "$(DIST)/Contents/PkgInfo"
 	codesign --force --sign "$(SIGN)" --identifier $(BUNDLE_ID) "$(DIST)"
@@ -41,6 +42,17 @@ bench:
 
 clean:
 	rm -rf .build dist
+
+# Regenerate Packaging/AppIcon.icns and docs/assets/logo-*.png from tools/icon/make-icon.swift.
+icon:
+	mkdir -p .build/icon && swift tools/icon/make-icon.swift .build/icon
+	iconutil -c icns .build/icon/AppIcon.iconset -o Packaging/AppIcon.icns
+	cp .build/icon/logo-512.png docs/assets/logo-512.png
+	cp .build/icon/logo-128.png docs/assets/logo-128.png
+
+# Zip the built app for a GitHub release: dist/RecRec-$(VERSION).zip
+release: app
+	cd dist && rm -f "$(APP)-$(VERSION).zip" && ditto -c -k --keepParent "$(APP).app" "$(APP)-$(VERSION).zip" && ls -l "$(APP)-$(VERSION).zip"
 
 # One-time: create a self-signed "RecRec Development" code-signing certificate in the login keychain so
 # that rebuilds keep their Screen Recording permission. macOS may ask for your password to trust it.

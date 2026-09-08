@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.svg" width="128" height="128" alt="RecRec logo">
+</p>
+
 # RecRec
 
 A tiny menu-bar screen recorder for macOS that writes **small** MP4 files.
@@ -12,16 +16,36 @@ A tiny menu-bar screen recorder for macOS that writes **small** MP4 files.
 
 macOS 14 (Sonoma) or newer, Apple Silicon or Intel. To build: Swift 5.9+ from Xcode or the Command Line Tools (`xcode-select --install`).
 
+## Install
+
+**Build from source (recommended, about a minute):**
+
+```bash
+git clone https://github.com/marcogbarcellos/recrec.git
+cd recrec
+make run
+```
+
+Requires macOS 14+ and the Xcode Command Line Tools (`xcode-select --install`). `make run` builds `dist/RecRec.app` and opens it; copy it to `/Applications` if you want it to stick around.
+
+**Download a build:** grab `RecRec-<version>.zip` from the [Releases](https://github.com/marcogbarcellos/recrec/releases) page, unzip, move `RecRec.app` to `/Applications` and open it. The build is signed with a local certificate and not notarized (no paid Apple Developer account), so macOS blocks it the first time: right-click the app → **Open**, then System Settings → Privacy & Security → **Open Anyway**. Or clear the quarantine flag from a terminal:
+
+```bash
+xattr -d com.apple.quarantine /Applications/RecRec.app
+```
+
 ## Build and run
 
 ```bash
-make app        # builds dist/RecRec.app (release, ad-hoc signed)
+make app        # builds dist/RecRec.app (release; signs with the local "RecRec Development" certificate if present)
 make run        # builds and opens it
 make test       # runs the test suite (custom harness; no Xcode needed)
 make bench      # re-runs the encoder benchmark (see docs/benchmarks/encoder-benchmark.md)
+make icon       # regenerates the app icon and README logo from tools/icon/make-icon.swift
+make release    # zips the built app into dist/RecRec-<version>.zip
 ```
 
-Options: `make app SIGN="Apple Development: Your Name (TEAMID)"` signs with a stable identity (see Troubleshooting); `make app UNIVERSAL=1` builds an arm64 + x86_64 binary. Copy `dist/RecRec.app` to `/Applications` if you want Launch at Login to survive rebuilds.
+Options: `make signing-cert` creates a self-signed "RecRec Development" certificate once so rebuilds keep their Screen Recording permission (see Troubleshooting); `make app SIGN="Apple Development: Your Name (TEAMID)"` uses a real identity instead; `make app UNIVERSAL=1` builds an arm64 + x86_64 binary. Copy `dist/RecRec.app` to `/Applications` if you want Launch at Login to survive rebuilds.
 
 ## First launch
 
