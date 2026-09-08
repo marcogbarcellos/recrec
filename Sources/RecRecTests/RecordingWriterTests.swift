@@ -143,6 +143,44 @@ func registerRecordingWriterTests(_ r: TestRunner) {
         try expectNear(audioDuration, 2.0, tolerance: 0.15, "audio track should cover the whole recording")
     }
 
+    r.test("microphone track survives the first-buffer interleaving flag change seen with AirPods") {
+        // Field log 2026-09-08 01:36:54: buffer #1 flags=9 (interleaved), buffers #2… flags=41 (non-interleaved);
+        // the writer locked the first description and dropped 366 of 367 buffers.
+        let url = SyntheticMedia.tempURL("mp4")
+        defer { SyntheticMedia.cleanup(url) }
+        let w = try RecordingWriter(configuration: config(url, audio: [.microphone]))
+        var audioIndex = 0
+        for i in 0..<60 {
+            w.appendVideo(SyntheticMedia.pixelBuffer(width: 640, height: 360, frame: i), presentationTime: t(Double(i) / 30), status: .complete)
+            if i % 3 == 0 {
+                w.appendAudio(SyntheticMedia.audioSampleBuffer(startTime: t(Double(i) / 30), frames: 2400, sampleRate: 24_000,
+                                                               nonInterleaved: audioIndex > 0), kind: .microphone)
+                audioIndex += 1
+            }
+        }
+        let result = try await w.finish(at: t(2))
+        try expectEqual(result.audioStats[.microphone]?.accepted, 20, "all 20 buffers must be written")
+        try expectEqual(result.audioStats[.microphone]?.droppedFormatChanged ?? 0, 0)
+        let audioDuration = try await SyntheticMedia.audioDuration(url)
+        try expectNear(audioDuration, 2.0, tolerance: 0.15)
+    }
+
+    r.test("a real format change (sample rate) is dropped and counted, video is unaffected") {
+        let url = SyntheticMedia.tempURL("mp4")
+        defer { SyntheticMedia.cleanup(url) }
+        let w = try RecordingWriter(configuration: config(url, audio: [.microphone]))
+        for i in 0..<60 {
+            w.appendVideo(SyntheticMedia.pixelBuffer(width: 640, height: 360, frame: i), presentationTime: t(Double(i) / 30), status: .complete)
+            if i % 3 == 0 {
+                w.appendAudio(SyntheticMedia.audioSampleBuffer(startTime: t(Double(i) / 30), frames: i < 30 ? 2400 : 4800, sampleRate: i < 30 ? 24_000 : 48_000), kind: .microphone)
+            }
+        }
+        let result = try await w.finish(at: t(2))
+        try expectEqual(result.audioStats[.microphone]?.accepted, 10)
+        try expectEqual(result.audioStats[.microphone]?.droppedFormatChanged, 10)
+        try expectEqual(result.videoFrames, 61)
+    }
+
     r.test("cancel removes the file and later finish fails") {
         let url = SyntheticMedia.tempURL("mp4")
         let w = try RecordingWriter(configuration: config(url))

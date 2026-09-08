@@ -34,10 +34,14 @@ enum SyntheticMedia {
     /// channel layout, which makes the format description differ from one without it while the ASBD is identical
     /// (what capture pipelines do when they "settle" after the first buffers).
     static func audioSampleBuffer(startTime: CMTime, frames: Int, sampleRate: Double = 48_000,
-                                  withChannelLayout: Bool = false) -> CMSampleBuffer {
+                                  withChannelLayout: Bool = false, nonInterleaved: Bool = false) -> CMSampleBuffer {
+        // For mono, "non-interleaved" (flags 41) and interleaved (flags 9) have identical bytes; capture
+        // pipelines are seen switching between the two descriptions after the first buffer.
+        var flags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked
+        if nonInterleaved { flags |= kAudioFormatFlagIsNonInterleaved }
         var asbd = AudioStreamBasicDescription(
             mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
-            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            mFormatFlags: flags,
             mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 1, mBitsPerChannel: 32, mReserved: 0)
         var format: CMAudioFormatDescription?
         if withChannelLayout {

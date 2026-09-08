@@ -50,6 +50,7 @@ public struct AudioTrackStats: Equatable {
     public var accepted = 0
     public var droppedBeforeSession = 0
     public var droppedFormatChanged = 0
+    public var rewrappedFormat = 0
     public var droppedNotReady = 0
     public var appendFailed = 0
     public var firstPresentationTime: Double?
@@ -59,6 +60,7 @@ public struct AudioTrackStats: Equatable {
         var parts = ["accepted \(accepted)"]
         if droppedBeforeSession > 0 { parts.append("before-session \(droppedBeforeSession)") }
         if droppedFormatChanged > 0 { parts.append("format-changed \(droppedFormatChanged)") }
+        if rewrappedFormat > 0 { parts.append("rewrapped \(rewrappedFormat)") }
         if droppedNotReady > 0 { parts.append("not-ready \(droppedNotReady)") }
         if appendFailed > 0 { parts.append("append-failed \(appendFailed)") }
         if let first = firstPresentationTime, let last = lastPresentationTime {
@@ -157,14 +159,25 @@ public final class RecordingWriter {
             let end = CMTimeAdd(pts, CMSampleBufferGetDuration(sampleBuffer))
             guard sessionStart.isValid, CMTimeCompare(end, sessionStart) > 0 else { stats.droppedBeforeSession += 1; return }
             guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+            var buffer = sampleBuffer
             if let locked = audioFormats[kind] {
-                // The AAC converter is configured from the first buffer; a different format would corrupt the track.
-                guard CMFormatDescriptionEqual(locked, otherFormatDescription: format) else {
-                    if stats.droppedFormatChanged == 0 {
-                        diagnostics.log("writer", "\(kind.rawValue) audio format changed after \(stats.accepted) buffers; dropping the rest")
+                // The AAC converter is configured from the first buffer. A description that only differs
+                // cosmetically (mono interleaved vs non-interleaved) is re-wrapped under the locked description;
+                // a real change (rate, channels, bit depth) cannot be converted here and is dropped.
+                if !CMFormatDescriptionEqual(locked, otherFormatDescription: format) {
+                    if AudioFormat.haveIdenticalLayout(locked, format), let rewrapped = AudioFormat.rewrapped(sampleBuffer, formatDescription: locked) {
+                        if stats.rewrappedFormat == 0 {
+                            diagnostics.log("writer", "\(kind.rawValue) audio description changed after \(stats.accepted) buffers (same layout); re-wrapping")
+                        }
+                        stats.rewrappedFormat += 1
+                        buffer = rewrapped
+                    } else {
+                        if stats.droppedFormatChanged == 0 {
+                            diagnostics.log("writer", "\(kind.rawValue) audio format changed after \(stats.accepted) buffers; dropping the rest")
+                        }
+                        stats.droppedFormatChanged += 1
+                        return
                     }
-                    stats.droppedFormatChanged += 1
-                    return
                 }
             } else {
                 audioFormats[kind] = format
@@ -174,7 +187,7 @@ public final class RecordingWriter {
             }
             guard writer.status == .writing else { reportFailure(); return }
             guard waitUntilReady(input) else { stats.droppedNotReady += 1; return }
-            if input.append(sampleBuffer) {
+            if input.append(buffer) {
                 stats.accepted += 1
                 if stats.firstPresentationTime == nil { stats.firstPresentationTime = pts.seconds }
                 stats.lastPresentationTime = end.seconds

@@ -4,6 +4,22 @@ import RecRecCore
 func registerSampleBufferTimingTests(_ r: TestRunner) {
     func t(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: 24_000) }
 
+    r.test("audio layouts: mono interleaved vs non-interleaved are identical, rate or channel changes are not") {
+        func description(_ sb: CMSampleBuffer) -> CMFormatDescription { CMSampleBufferGetFormatDescription(sb)! }
+        let interleaved = description(SyntheticMedia.audioSampleBuffer(startTime: t(0), frames: 480, sampleRate: 24_000))
+        let planar = description(SyntheticMedia.audioSampleBuffer(startTime: t(0), frames: 480, sampleRate: 24_000, nonInterleaved: true))
+        let faster = description(SyntheticMedia.audioSampleBuffer(startTime: t(0), frames: 480, sampleRate: 48_000))
+        try expectEqual(CMFormatDescriptionEqual(interleaved, otherFormatDescription: planar), false, "descriptions really differ")
+        try expectEqual(AudioFormat.haveIdenticalLayout(interleaved, planar), true)
+        try expectEqual(AudioFormat.haveIdenticalLayout(interleaved, faster), false)
+        let rewrapped = AudioFormat.rewrapped(SyntheticMedia.audioSampleBuffer(startTime: t(3), frames: 480, sampleRate: 24_000, nonInterleaved: true), formatDescription: interleaved)!
+        try expectEqual(CMFormatDescriptionEqual(CMSampleBufferGetFormatDescription(rewrapped)!, otherFormatDescription: interleaved), true)
+        try expectEqual(CMSampleBufferGetNumSamples(rewrapped), 480)
+        try expectNear(CMSampleBufferGetPresentationTimeStamp(rewrapped).seconds, 3, tolerance: 0.0001)
+        try expectNear(CMSampleBufferGetDuration(rewrapped).seconds, 0.02, tolerance: 0.0001)
+        try expectEqual(CMSampleBufferGetTotalSampleSize(rewrapped), 480 * 4)
+    }
+
     r.test("shifting an audio buffer keeps the per-sample duration and moves the start") {
         // 480 frames at 24 kHz = 20 ms, like a Bluetooth headset microphone.
         let original = SyntheticMedia.audioSampleBuffer(startTime: t(10), frames: 480, sampleRate: 24_000)
