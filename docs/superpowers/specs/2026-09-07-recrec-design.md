@@ -243,3 +243,13 @@ Measured on 2026-09-08 (release build, M3 Max, macOS 26.6): bundle 552 KB, idle 
 9. Two audio tracks when both mic and system audio are enabled (mixing deferred).
 10. Keyframe cadence 10 s of written frames (a 30 s cadence would save ~15% more but slows scrubbing); the research suggestion of 2 s was rejected because it doubles file size in the benchmark.
 11. H.264 above 4096 px wide is downscaled to fit rather than switched to HEVC, so the user's explicit compatibility choice is respected.
+
+## 12. Camera bubble (added 2026-09-10)
+
+Loom-style webcam bubble, approved in chat (option "visible whenever Camera is on").
+
+- **Approach:** a borderless, non-activating, always-on-top circular `NSPanel` (`CameraBubbleController`) showing an `AVCaptureVideoPreviewLayer` (720p preset, aspect-fill, optional mirroring). Because RecRec captures the whole display, the bubble is simply part of the recording: no per-frame compositing, no extra CPU. The compositing alternative (camera frames blended into each captured frame before encoding) was rejected as heavy.
+- **Capture filter change:** the recorder no longer excludes the whole RecRec process; it excludes only the status-bar window (the `● 00:12` timer), so the bubble and any other RecRec window are recorded.
+- **Settings:** `cameraEnabled` (off), `cameraCorner` (topRight), `cameraSize` (small 160 / medium 220 / large 300 pt), `cameraMirrored` (on). Settings decoding became key-tolerant (`decodeIfPresent` with defaults) so older saved settings keep loading.
+- **Behavior:** the bubble appears at the chosen corner (24 pt margin inside the screen's visible frame) when Camera is turned on and disappears when it is turned off; it can be dragged anywhere (`isMovableByWindowBackground`); the dragged position is remembered while the app runs and a corner change puts it back in that corner; a display change clamps it back on screen. Pure layout math lives in `CameraBubbleLayout` (tested).
+- **Permissions:** `NSCameraUsageDescription`; denial turns the option off and shows the settings alert.

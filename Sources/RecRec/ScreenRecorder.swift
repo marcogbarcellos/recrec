@@ -9,6 +9,7 @@ enum RecorderError: LocalizedError {
     case microphoneDenied
     case noDisplay
     case noMicrophone
+    case noCamera
     case streamStopped(String)
 
     var errorDescription: String? {
@@ -17,6 +18,7 @@ enum RecorderError: LocalizedError {
         case .microphoneDenied: return "Microphone permission was not granted."
         case .noDisplay: return "No display is available to record."
         case .noMicrophone: return "No microphone was found."
+        case .noCamera: return "No camera was found."
         case .streamStopped(let reason): return "The capture stopped: \(reason)"
         }
     }
@@ -80,8 +82,14 @@ final class ScreenRecorder: Recorder {
             guard let display = DisplaySelection.choose(from: content.displays, pinned: settings.pinnedDisplayID) else {
                 throw RecorderError.noDisplay
             }
-            let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-            let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+            // Hide only our status-bar item (the "● 00:12" timer); other RecRec windows, such as the camera
+            // bubble, are meant to be part of the recording.
+            let statusWindowIDs = Set(NSApp.windows
+                .filter { String(describing: type(of: $0)).contains("StatusBar") }
+                .map { CGWindowID($0.windowNumber) })
+            let excludedWindows = content.windows.filter { statusWindowIDs.contains($0.windowID) }
+            let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+            diagnostics.log("recorder", "excluding \(excludedWindows.count) status-bar window(s) from the capture")
             let geometry = EncoderConfig.captureGeometry(
                 pointSize: CGSize(width: display.width, height: display.height),
                 pixelSize: DisplaySelection.pixelSize(of: display.displayID),

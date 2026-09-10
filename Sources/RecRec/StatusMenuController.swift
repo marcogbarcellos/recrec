@@ -13,6 +13,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var lastResult: RecordingResult?
     private var exportInProgress = false
     private var displays: [(id: UInt32, name: String)] = []
+    private let cameraBubble = CameraBubbleController()
     /// Set by AppDelegate after registering the global shortcut; false when another app owns ⌃⌥⌘R.
     var hotKeyAvailable = true {
         didSet { rebuildMenu() }
@@ -32,6 +33,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         displays = DisplaySelection.connectedDisplays()
         updateStatusButton()
         rebuildMenu()
+        if settings.cameraEnabled { showCameraBubble() }
     }
 
     // MARK: - Recording
@@ -83,6 +85,44 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleSystemAudio(_ sender: Any?) { settings.systemAudioEnabled.toggle(); save() }
+
+    @objc private func toggleCamera(_ sender: Any?) {
+        settings.cameraEnabled.toggle()
+        save()
+        if settings.cameraEnabled { showCameraBubble() } else { cameraBubble.hide() }
+    }
+
+    @objc private func selectCameraCorner(_ sender: NSMenuItem) {
+        if let corner = sender.representedObject as? CameraCorner { settings.cameraCorner = corner; save(); cameraBubble.apply(settings: settings) }
+    }
+
+    @objc private func selectCameraSize(_ sender: NSMenuItem) {
+        if let size = sender.representedObject as? CameraBubbleSize { settings.cameraSize = size; save(); cameraBubble.apply(settings: settings) }
+    }
+
+    @objc private func toggleCameraMirror(_ sender: Any?) {
+        settings.cameraMirrored.toggle()
+        save()
+        cameraBubble.apply(settings: settings)
+    }
+
+    private func showCameraBubble() {
+        Task { @MainActor in
+            guard await CameraBubbleController.requestAccess() else {
+                settings.cameraEnabled = false
+                save()
+                Permissions.presentCameraDenied()
+                return
+            }
+            do {
+                try cameraBubble.show(settings: settings)
+            } catch {
+                settings.cameraEnabled = false
+                save()
+                Permissions.presentError(error, title: "Camera")
+            }
+        }
+    }
     @objc private func toggleCursor(_ sender: Any?) { settings.showsCursor.toggle(); save() }
     @objc private func toggleReveal(_ sender: Any?) { settings.revealInFinder.toggle(); save() }
 
@@ -267,6 +307,20 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(check("Microphone", settings.microphoneEnabled, #selector(toggleMicrophone(_:)), enabled: !busy))
         menu.addItem(check("System Audio", settings.systemAudioEnabled, #selector(toggleSystemAudio(_:)), enabled: !busy))
         menu.addItem(check("Show Cursor", settings.showsCursor, #selector(toggleCursor(_:)), enabled: !busy))
+        menu.addItem(.separator())
+
+        menu.addItem(check("Camera", settings.cameraEnabled, #selector(toggleCamera(_:)), enabled: true))
+        let corner = submenu("Camera Position", enabled: true)
+        for (value, name) in [(CameraCorner.topRight, "Top Right"), (.topLeft, "Top Left"), (.bottomRight, "Bottom Right"), (.bottomLeft, "Bottom Left")] {
+            corner.submenu?.addItem(radio(name, settings.cameraCorner == value, #selector(selectCameraCorner(_:)), value))
+        }
+        menu.addItem(corner)
+        let cameraSize = submenu("Camera Size", enabled: true)
+        for (value, name) in [(CameraBubbleSize.small, "Small"), (.medium, "Medium"), (.large, "Large")] {
+            cameraSize.submenu?.addItem(radio(name, settings.cameraSize == value, #selector(selectCameraSize(_:)), value))
+        }
+        menu.addItem(cameraSize)
+        menu.addItem(check("Mirror Camera", settings.cameraMirrored, #selector(toggleCameraMirror(_:)), enabled: true))
         menu.addItem(.separator())
 
         let quality = submenu("Quality", enabled: !busy)

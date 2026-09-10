@@ -11,6 +11,7 @@ A tiny menu-bar screen recorder for macOS that writes **small** MP4 files.
 - Records the entire screen with ScreenCaptureKit and Apple's hardware HEVC/H.264 encoders. No windows, no Dock icon, no dependencies: the app bundle is about 550 KB and idles at ~44 MB of RAM.
 - Files are 10–20× smaller than QuickTime's for the same content: constant-quality encoding, frames written only when the screen changes, HEVC by default, 30 fps. A minute of typical desktop work is around 2 MB at full Retina resolution (about 1 MB at 1x); QuickTime writes 75–150 MB for the same minute.
 - Crash-safe: recordings are fragmented MP4/MOV, so a crash or forced quit loses at most the last 5 seconds.
+- Optional Loom-style camera bubble: a draggable circle with your webcam that is captured as part of the screen (off by default; choose its corner and size in the menu).
 
 ## Requirements
 
@@ -55,7 +56,7 @@ Options: `make signing-cert` creates a self-signed "RecRec Development" certific
 3. Start again. The icon turns into a red `● 00:00` timer. Stop with the menu, the hotkey, or the system's own recording indicator in the menu bar.
 4. The file is revealed in Finder (`~/Movies/RecRec` by default) and listed in the menu under **Last:** with Open, Reveal in Finder and Export GIF.
 
-Turning on **Microphone** asks for the microphone permission. Saving to Desktop, Documents or Downloads makes macOS ask for folder access once; `~/Movies` does not.
+Turning on **Microphone** or **Camera** asks for the matching permission. Saving to Desktop, Documents or Downloads makes macOS ask for folder access once; `~/Movies` does not.
 
 ## Menu
 
@@ -65,6 +66,10 @@ Turning on **Microphone** asks for the microphone permission. Saving to Desktop,
 | Microphone | off | Default input device, AAC 64 kbps mono. |
 | System Audio | off | Driver-free via ScreenCaptureKit, AAC 128 kbps stereo. RecRec's own sounds are excluded. |
 | Show Cursor | on | |
+| Camera | off | Shows a floating circular bubble with your camera (Loom style) whenever it is on; drag it anywhere. It is part of the screen, so it appears in the recording exactly as you see it. Asks for the camera permission once. |
+| Camera Position | Top Right | Corner where the bubble appears; after that, drag freely. |
+| Camera Size | Medium | Small (160 pt), Medium (220 pt), Large (300 pt). |
+| Mirror Camera | on | Mirror-image preview; the recording matches what you see. |
 | Quality | Balanced | Small / Balanced / High map to constant-quality encoder settings tuned per codec and resolution. |
 | Format | MP4 · HEVC | HEVC plays natively on Apple devices, in Chrome 107+, Firefox 134+ (Windows) / 136+ (macOS) and Edge; on Windows it still needs the HEVC Video Extensions and a GPU with an HEVC decoder. Pick MP4 · H.264 when the recipient's setup is unknown; MOV variants are for Apple-only workflows. |
 | Frame Rate | 30 fps | 15 / 24 / 30 / 60. Frames are only written when the screen changes, so a static screen costs almost nothing at any setting. |

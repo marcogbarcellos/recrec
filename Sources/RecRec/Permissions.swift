@@ -4,6 +4,7 @@ import AppKit
 enum Permissions {
     static let screenCaptureSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
     static let microphoneSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+    static let cameraSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!
 
     static func presentError(_ error: Error, title: String = "RecRec") {
         let alert = NSAlert()
@@ -27,6 +28,13 @@ enum Permissions {
             title: "Microphone permission needed",
             text: "Allow RecRec under System Settings → Privacy & Security → Microphone, or turn the Microphone option off.",
             url: microphoneSettingsURL)
+    }
+
+    static func presentCameraDenied() {
+        presentSettingsAlert(
+            title: "Camera permission needed",
+            text: "Allow RecRec under System Settings → Privacy & Security → Camera, or leave the Camera option off.",
+            url: cameraSettingsURL)
     }
 
     private static func presentSettingsAlert(title: String, text: String, url: URL) {

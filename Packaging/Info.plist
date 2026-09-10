@@ -17,6 +17,8 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>RecRec records your microphone only while the Microphone option is on.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>RecRec shows your camera in the floating bubble only while the Camera option is on.</string>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
 </dict>
 </plist>
