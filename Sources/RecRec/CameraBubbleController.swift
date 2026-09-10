@@ -142,10 +142,14 @@ final class CameraBubbleView: NSView {
         super.init(frame: .zero)
         let root = CALayer()
         root.masksToBounds = true
-        root.backgroundColor = NSColor.black.cgColor
+        root.backgroundColor = NSColor.clear.cgColor
         root.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
         root.borderWidth = 3
         previewLayer.videoGravity = .resizeAspectFill
+        // The preview layer is composited by the video pipeline and ignores the parent's clip, so the
+        // circular clip must be set on the preview layer itself.
+        previewLayer.masksToBounds = true
+        previewLayer.backgroundColor = NSColor.black.cgColor
         root.addSublayer(previewLayer)
         layer = root
         wantsLayer = true
@@ -159,9 +163,12 @@ final class CameraBubbleView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        let radius = min(bounds.width, bounds.height) / 2
         previewLayer.frame = bounds
-        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        previewLayer.cornerRadius = radius
+        layer?.cornerRadius = radius
         CATransaction.commit()
+        window?.invalidateShadow()
     }
 
     func apply(mirrored: Bool) {
