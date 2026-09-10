@@ -1,6 +1,6 @@
 APP        := RecRec
 BUNDLE_ID  := com.barsmike.RecRec
-VERSION    ?= 0.1.0
+VERSION    ?= 0.2.0
 # Signing identity: a stable identity keeps the Screen Recording permission across rebuilds (ad-hoc "-"
 # signatures change with every build and macOS treats each build as a new app). Auto-detects the
 # "RecRec Development" certificate created by `make signing-cert`; override with SIGN="Apple Development: …".
