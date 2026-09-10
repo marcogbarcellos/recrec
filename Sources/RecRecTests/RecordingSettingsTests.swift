@@ -89,6 +89,12 @@ func registerRecordingSettingsTests(_ r: TestRunner) {
         try expectEqual(CameraBubbleLayout.clamped(CGRect(x: 300, y: 300, width: 220, height: 220), to: screen), CGRect(x: 300, y: 300, width: 220, height: 220))
     }
 
+    r.test("window numbers: negative and zero (off-screen windows) are ignored, valid ones convert") {
+        // Regression: a hidden window reported windowNumber -1 and UInt32(-1) trapped at Start Recording.
+        try expectEqual(WindowIDs.valid([-1, 0, 42, 7, Int(UInt32.max) + 1]), Set<CGWindowID>([42, 7]))
+        try expectEqual(WindowIDs.valid([]), Set<CGWindowID>())
+    }
+
     r.test("container file extensions") {
         try expectEqual(Container.mp4.fileExtension, "mp4")
         try expectEqual(Container.mov.fileExtension, "mov")

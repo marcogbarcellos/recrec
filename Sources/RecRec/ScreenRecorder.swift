@@ -84,9 +84,9 @@ final class ScreenRecorder: Recorder {
             }
             // Hide only our status-bar item (the "● 00:12" timer); other RecRec windows, such as the camera
             // bubble, are meant to be part of the recording.
-            let statusWindowIDs = Set(NSApp.windows
+            let statusWindowIDs = WindowIDs.valid(NSApp.windows
                 .filter { String(describing: type(of: $0)).contains("StatusBar") }
-                .map { CGWindowID($0.windowNumber) })
+                .map(\.windowNumber))
             let excludedWindows = content.windows.filter { statusWindowIDs.contains($0.windowID) }
             let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
             diagnostics.log("recorder", "excluding \(excludedWindows.count) status-bar window(s) from the capture")
